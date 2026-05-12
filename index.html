@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Image Viewer</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #0a0a0f;
+      font-family: 'Courier New', monospace;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+
+    #ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 999;
+      pointer-events: none;
+    }
+
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+    }
+
+    #title {
+      font-size: 13px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #7fffd4;
+      opacity: 0.9;
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #7fffd4;
+      box-shadow: 0 0 8px #7fffd4;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    #instruction-panel {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 999;
+      pointer-events: none;
+      padding: 20px;
+      background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+    }
+
+    #instruction-text {
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.55);
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    #marker-hint {
+      font-size: 10px;
+      color: rgba(127,255,212,0.6);
+      text-align: center;
+      margin-top: 6px;
+      letter-spacing: 0.1em;
+    }
+
+    /* Loading Screen */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #0a0a0f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.8s ease;
+    }
+
+    #loading-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loader-ring {
+      width: 48px;
+      height: 48px;
+      border: 2px solid rgba(127,255,212,0.15);
+      border-top-color: #7fffd4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 24px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loader-text {
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: rgba(127,255,212,0.7);
+    }
+  </style>
+
+  <!-- A-Frame -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.4.2/aframe.min.js"></script>
+
+  <!-- AR.js (同じバージョンに統一) -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+
+</head>
+
+<body>
+
+  <!-- Loading -->
+  <div id="loading-screen">
+    <div class="loader-ring"></div>
+    <div class="loader-text">カメラを起動中...</div>
+  </div>
+
+  <!-- UI -->
+  <div id="ui-overlay">
+    <div id="header">
+      <span id="title">AR IMAGE VIEWER</span>
+      <div id="status-dot"></div>
+    </div>
+  </div>
+
+  <div id="instruction-panel">
+    <div id="instruction-text">マーカーにカメラを向けてください</div>
+    <div id="marker-hint">Hiro マーカー対応</div>
+  </div>
+
+  <!-- AR Scene
+       修正ポイント①: logarithmicDepthBuffer を false に
+       修正ポイント②: alpha:true / colorManagement:false でテクスチャ色化け防止
+  -->
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="
+      logarithmicDepthBuffer: false;
+      antialias: true;
+      alpha: true;
+      colorManagement: false;
+    "
+    arjs="
+      sourceType: webcam;
+      debugUIEnabled: false;
+      detectionMode: mono_and_matrix;
+      matrixCodeType: 3x3;
+    "
+  >
+
+    <!-- Assets
+         修正ポイント③: crossorigin を削除（同一オリジン配信なら不要、むしろ黒化の原因になる）
+         修正ポイント④: クエリパラメータ(?v=...)を削除（A-Frameのアセットキャッシュと競合する）
+    -->
+    <a-assets timeout="10000">
+      <img id="ar-image" src="image1.png">
+    </a-assets>
+
+    <!-- Hiro Marker -->
+    <a-marker preset="hiro">
+
+      <!-- AR Image
+           修正ポイント⑤: material を明示指定して shader:flat + side:double に設定
+                           shader:flat = ライティング計算をスキップ → 暗くならない
+                           side:double = 裏面も描画
+                           透過が必要な画像なら alphaTest:0.1 を追加
+      -->
+      <a-image
+        src="#ar-image"
+        position="0 0.01 0"
+        rotation="-90 0 0"
+        width="1.5"
+        height="1.5"
+        material="
+          shader: flat;
+          side: double;
+          transparent: true;
+          alphaTest: 0.1;
+        "
+      ></a-image>
+
+    </a-marker>
+
+    <!-- Camera -->
+    <a-entity camera></a-entity>
+
+  </a-scene>
+
+  <script>
+    // Loading Screen
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('loading-screen').classList.add('hidden');
+      }, 1800);
+    });
+
+    // Marker Detection
+    const marker          = document.querySelector('a-marker');
+    const statusDot       = document.getElementById('status-dot');
+    const instructionText = document.getElementById('instruction-text');
+
+    marker.addEventListener('markerFound', () => {
+      statusDot.style.background  = '#00ff88';
+      statusDot.style.boxShadow   = '0 0 12px #00ff88';
+      instructionText.textContent = 'マーカー検出 — 画像を表示中';
+    });
+
+    marker.addEventListener('markerLost', () => {
+      statusDot.style.background  = '#7fffd4';
+      statusDot.style.boxShadow   = '0 0 8px #7fffd4';
+      instructionText.textContent = 'マーカーにカメラを向けてください';
+    });
+  </script>
+
+</body>
+</html>
