@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Image Viewer</title>
+
+  <!-- A-Frame & AR.js -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+
+    /* カメラ映像が全画面・等倍になるようにリセット */
+    .a-canvas {
+      width: 100vw !important;
+      height: 100vh !important;
+    }
+
+    /* デバッグ用オーバーレイ（不要なら display:none にしてください） */
+    #ui-overlay {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 9999;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="ui-overlay">📷 Hiro マーカーをカメラに向けてください</div>
+
+  <!-- ============================================================
+       AR シーン設定
+       - sourceType: webcam  → デバイスのカメラを使用
+       - displayWidth / displayHeight: ズームを防ぐためデバイス解像度に合わせる
+       - detectionMode: mono  → Hiroマーカー用
+       ============================================================ -->
+  <a-scene
+    embedded
+    arjs="
+      sourceType: webcam;
+      sourceWidth: 1280;
+      sourceHeight: 960;
+      displayWidth: 1280;
+      displayHeight: 960;
+      detectionMode: mono_and_matrix;
+      matrixCodeType: 3x3;
+    "
+    renderer="logarithmicDepthBuffer: true; antialias: true;"
+    vr-mode-ui="enabled: false"
+  >
+
+    <!-- ============================================================
+         アセット定義
+         ▼ 画像を追加・変更したいときはここに <img> タグを追加してください
+         ============================================================ -->
+    <a-assets>
+      <!-- 画像1: Hiro マーカー上に表示 -->
+      <img id="img-hiro" src="image1.png" crossorigin="anonymous" />
+
+      <!-- 画像を追加する場合の例（コメントを外して使ってください）:
+      <img id="img-kanji" src="image2.png" crossorigin="anonymous" />
+      -->
+    </a-assets>
+
+    <!-- ============================================================
+         マーカー定義
+         ▼ マーカーごとに <a-marker> ブロックを追加してください
+         ============================================================ -->
+
+    <!-- --- Hiro マーカー --- -->
+    <a-marker preset="hiro">
+
+      <!--
+        ★ 画像の表示設定 ★
+        ・src        : アセットID（上の <img id="..."> と対応）
+        ・width      : 画像の横幅（メートル単位、マーカーは約 1 = 1 単位）
+        ・height     : 画像の縦幅
+        ・position   : マーカー中心からのオフセット (x, y, z)
+        ・rotation   : 角度を変えたい場合はここを調整してください
+                        マーカー面と平行 = rotation="0 0 0"
+                        例: 垂直に立てる  = rotation="-90 0 0"
+      -->
+      <a-image
+        src="#img-hiro"
+        width="1"
+        height="1"
+        position="0 0 0"
+        rotation="0 0 0"
+      ></a-image>
+
+    </a-marker>
+
+    <!-- 追加マーカーの例（コメントを外して使ってください）:
+    <a-marker preset="kanji">
+      <a-image
+        src="#img-kanji"
+        width="1"
+        height="1"
+        position="0 0 0"
+        rotation="0 0 0"
+      ></a-image>
+    </a-marker>
+    -->
+
+    <!-- カメラ -->
+    <a-entity camera></a-entity>
+
+  </a-scene>
+
+</body>
+</html>
