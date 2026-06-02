@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MusicAR</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <!-- MindAR -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Courier New', monospace;
+    }
+
+    video {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      object-fit: cover !important;
+      z-index: 0 !important;
+    }
+
+    a-scene {
+      position: fixed !important;
+      top: 0; left: 0;
+      width: 100vw !important; height: 100vh !important;
+      z-index: 1;
+    }
+    a-scene canvas { background: transparent !important; }
+
+    /* ─── パスワード画面 ─── */
+    #pw-screen {
+      position: fixed; inset: 0; z-index: 50000;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px;
+      background: #0a0a0a;
+    }
+    #pw-screen h1 {
+      font-size: clamp(22px, 6vw, 36px);
+      letter-spacing: 0.25em;
+      color: #e8e0cc;
+      text-transform: uppercase;
+    }
+    #pw-screen p {
+      font-size: 12px; color: #555;
+      letter-spacing: 0.15em; text-transform: uppercase;
+    }
+    #pw-input {
+      width: min(300px, 80vw);
+      padding: 14px 18px;
+      background: transparent;
+      border: none; border-bottom: 1px solid #888;
+      color: #e8e0cc;
+      font-family: 'Courier New', monospace;
+      font-size: 18px; letter-spacing: 0.2em;
+      outline: none; text-align: center;
+      caret-color: #e8e0cc;
+    }
+    #pw-input::placeholder { color: #444; }
+    #pw-input:focus { border-bottom-color: #c8b86e; }
+    #pw-btn {
+      width: min(300px, 80vw); padding: 14px;
+      background: transparent; border: 1px solid #555;
+      color: #e8e0cc;
+      font-family: 'Courier New', monospace;
+      font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase;
+      cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    #pw-btn:hover { border-color: #c8b86e; color: #c8b86e; }
+    #pw-error { font-size: 11px; color: #c0504d; letter-spacing: 0.1em; min-height: 16px; }
+
+    /* ─── 送信フラッシュ ─── */
+    #send-flash {
+      display: none; position: fixed; inset: 0; z-index: 40000;
+      align-items: center; justify-content: center;
+      pointer-events: none; background: rgba(0,0,0,0.45);
+    }
+    #send-flash.active { display: flex; animation: flash-fade 1.2s ease-out forwards; }
+    #send-flash-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    #send-flash-icon {
+      font-size: clamp(48px,18vw,90px); line-height: 1;
+      filter: drop-shadow(0 0 18px rgba(200,184,110,0.7));
+    }
+    #send-flash-label {
+      font-size: clamp(11px,3vw,15px); letter-spacing: 0.4em;
+      color: #c8b86e; text-transform: uppercase;
+    }
+    @keyframes flash-fade {
+      0% { opacity:0; } 15% { opacity:1; } 70% { opacity:1; } 100% { opacity:0; }
+    }
+
+    /* ─── タップリップル ─── */
+    .tap-ripple {
+      position: fixed; z-index: 35000;
+      pointer-events: none;
+      border-radius: 50%;
+      border: 2px solid rgba(200,184,110,0.9);
+      width: 60px; height: 60px;
+      margin-left: -30px; margin-top: -30px;
+      animation: ripple-anim 0.5s ease-out forwards;
+    }
+    @keyframes ripple-anim {
+      0%   { transform: scale(0.3); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    /* ─── ステータスバー ─── */
+    #status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 9000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 16px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px);
+      font-size: 11px; letter-spacing: 0.18em;
+      color: #666; text-transform: uppercase;
+      gap: 12px; pointer-events: none;
+    }
+    #status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #333; flex-shrink: 0; transition: background 0.3s;
+    }
+    #status-dot.found   { background: #c8b86e; box-shadow: 0 0 6px #c8b86e; }
+    #status-dot.sending { background: #6eb8c8; box-shadow: 0 0 6px #6eb8c8; }
+    #status-dot.sent    { background: #6ec88a; box-shadow: 0 0 6px #6ec88a; }
+    #status-dot.error   { background: #c86e6e; box-shadow: 0 0 6px #c86e6e; }
+
+    /* ─── ログ ─── */
+    #log {
+      position: fixed; bottom: 36px; left: 0;
+      width: 100%; max-height: 28vh; overflow-y: auto;
+      background: rgba(0,0,0,0.6); color: #00ff88;
+      font-family: monospace; font-size: 11px;
+      padding: 6px 10px; z-index: 8000; pointer-events: none;
+    }
+
+    /* ─── UI ボタン ─── */
+    .ctrl-btn {
+      position: fixed; z-index: 10000;
+      background: rgba(0,0,0,0.6); color: #fff;
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 8px;
+      width: 46px; height: 46px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; cursor: pointer; user-select: none;
+      transition: background 0.15s;
+    }
+    .ctrl-btn:active  { background: rgba(255,255,255,0.15); }
+    .ctrl-btn:disabled { opacity: 0.4; cursor: default; }
+    #ss-btn   { left: 10px; bottom: 44px; }
+    #rec-btn  { left: 66px; bottom: 44px; gap: 2px; }
+    #full-btn { right: 10px; top: 10px; }
+    #log-clear {
+      position: fixed; right: 10px; top: 66px; z-index: 10000;
+      background: rgba(0,0,0,0.55); color: #aaa;
+      border: 1px solid #444; border-radius: 4px;
+      padding: 5px 10px; font-size: 11px; cursor: pointer;
+    }
+    #mic-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; font-size: 9px; border-radius: 50%;
+    }
+    #mic-badge.on  { background: rgba(0,200,100,0.35); color: #affcc0; }
+    #mic-badge.off { background: rgba(255,80,80,0.3);  color: #ffaaaa; }
+    #rec-btn.recording {
+      background: rgba(160,0,0,0.7); border-color: #ff4444;
+      animation: rec-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes rec-pulse { 0%,100%{opacity:1;} 50%{opacity:0.65;} }
+
+    /* ─── カウントダウン ─── */
+    #countdown-overlay {
+      display: none; position: fixed; inset: 0; z-index: 20000;
+      align-items: center; justify-content: center;
+      background: transparent; pointer-events: none;
+    }
+    #countdown-overlay.active { display: flex; }
+    #countdown-num {
+      font-size: clamp(80px,25vw,160px);
+      font-family: monospace; font-weight: 900; color: #fff;
+      text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 2px 6px rgba(0,0,0,0.9);
+      animation: pop 0.4s ease-out;
+    }
+    @keyframes pop { 0%{transform:scale(1.6);opacity:0;} 60%{transform:scale(0.95);opacity:1;} 100%{transform:scale(1);opacity:1;} }
+    #ss-flash {
+      display: none; position: fixed; inset: 0; z-index: 30000;
+      background: #fff; pointer-events: none;
+    }
+    #ss-flash.active { display: block; animation: flash-anim 0.35s ease-out forwards; }
+    @keyframes flash-anim { 0%{opacity:1;} 100%{opacity:0;} }
+    #rec-hint {
+      display: none; position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 10000;
+      background: rgba(160,0,0,0.7); color: #fff;
+      font-family: monospace; font-size: 13px;
+      padding: 7px 16px; border-radius: 20px;
+      border: 1px solid rgba(255,100,100,0.5);
+      pointer-events: none; white-space: nowrap;
+    }
+    #rec-hint.active { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ─── パスワード画面 ─── -->
+<div id="pw-screen">
+  <h1>MusicAR</h1>
+  <p>Enter password to continue</p>
+  <input type="password" id="pw-input" placeholder="••••••••" autocomplete="current-password">
+  <button id="pw-btn">Enter</button>
+  <div id="pw-error"></div>
+</div>
+
+<!-- ─── 送信フラッシュ ─── -->
+<div id="send-flash">
+  <div id="send-flash-inner">
+    <div id="send-flash-icon">♪</div>
+    <div id="send-flash-label">Sending…</div>
+  </div>
+</div>
+
+<!-- ─── ステータスバー ─── -->
+<div id="status-bar">
+  <div id="status-dot"></div>
+  <span id="status-text">Waiting for target</span>
+</div>
+
+<!-- ─── ログ ─── -->
+<div id="log"></div>
+
+<!-- ─── UI ボタン ─── -->
+<button id="log-clear" class="ctrl-btn" style="width:auto;height:auto;">clear</button>
+<button id="full-btn" class="ctrl-btn">⛶</button>
+<button id="ss-btn"   class="ctrl-btn">📷</button>
+<button id="rec-btn"  class="ctrl-btn">🎥<span id="mic-badge" class="off">🎙</span></button>
+
+<!-- カウントダウン -->
+<div id="countdown-overlay"><div id="countdown-num">3</div></div>
+<div id="ss-flash"></div>
+<div id="rec-hint">⏹ ボタンで録画停止</div>
+
+<!-- ─── A-Frame シーン ─── -->
+<a-scene
+  color-space="sRGB"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true; preserveDrawingBuffer: true;"
+  mindar-image="
+    imageTargetSrc: ./targets.mind;
+    autoStart: true;
+    uiLoading: true;
+    uiScanning: true;
+    uiError: true;
+    filterMinCF: 0.1;
+    filterBeta: 10;
+    missTolerance: 5;
+    warmupTolerance: 3;
+    maxTrack: 1;
+  "
+  embedded>
+
+  <a-assets>
+    <!-- target0 用 -->
+    <img id="img0a" src="./image (1).webp" crossorigin="anonymous">
+    <img id="img0b" src="./image (2).webp" crossorigin="anonymous">
+    <!-- target1 用 -->
+    <img id="img1a" src="./image (3).webp" crossorigin="anonymous">
+    <img id="img1b" src="./image (4).webp" crossorigin="anonymous">
+    <!-- target2 用 -->
+    <img id="img2a" src="./image (5).webp" crossorigin="anonymous">
+    <img id="img2b" src="./image (6).webp" crossorigin="anonymous">
+    <!-- target3 用 -->
+    <img id="img3a" src="./image (7).webp" crossorigin="anonymous">
+    <img id="img3b" src="./image (8).webp" crossorigin="anonymous">
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+  <!--
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    各planeの座標・サイズはここで一括管理しています。
+    position="x y z"  : 横 縦 奥行き（単位: AR空間のメートル）
+    width / height     : プレーンのサイズ
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ■ target0  (image1 → music1,  image2 → music2)
+      plane0a: image (1).webp
+      plane0b: image (2).webp
+
+    ■ target1  (image3 → music3,  image4 → music4)
+      plane1a: image (3).webp
+      plane1b: image (4).webp
+
+    ■ target2  (image5 → music5,  image6 → music6)
+      plane2a: image (5).webp
+      plane2b: image (6).webp
+
+    ■ target3  (image7 → music7,  image8 → music8)
+      plane3a: image (7).webp
+      plane3b: image (8).webp
+  -->
+
+  <!-- ── target0 ── -->
+  <a-entity id="target0" mindar-image-target="targetIndex: 0" smooth-transform="alpha: 0.4">
+    <!-- image (1).webp → music1 -->
+    <a-plane id="plane0a"
+      src="#img0a"
+      width="0.35" height="0.35"
+      position="-0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music1">
+    </a-plane>
+    <!-- image (2).webp → music2 -->
+    <a-plane id="plane0b"
+      src="#img0b"
+      width="0.35" height="0.35"
+      position="0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music2">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target1 ── -->
+  <a-entity id="target1" mindar-image-target="targetIndex: 1" smooth-transform="alpha: 0.4">
+    <!-- image (3).webp → music3 -->
+    <a-plane id="plane1a"
+      src="#img1a"
+      width="0.35" height="0.35"
+      position="-0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music3">
+    </a-plane>
+    <!-- image (4).webp → music4 -->
+    <a-plane id="plane1b"
+      src="#img1b"
+      width="0.35" height="0.35"
+      position="0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music4">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target2 ── -->
+  <a-entity id="target2" mindar-image-target="targetIndex: 2" smooth-transform="alpha: 0.4">
+    <!-- image (5).webp → music5 -->
+    <a-plane id="plane2a"
+      src="#img2a"
+      width="0.35" height="0.35"
+      position="-0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music5">
+    </a-plane>
+    <!-- image (6).webp → music6 -->
+    <a-plane id="plane2b"
+      src="#img2b"
+      width="0.35" height="0.35"
+      position="0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music6">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target3 ── -->
+  <a-entity id="target3" mindar-image-target="targetIndex: 3" smooth-transform="alpha: 0.4">
+    <!-- image (7).webp → music7 -->
+    <a-plane id="plane3a"
+      src="#img3a"
+      width="0.35" height="0.35"
+      position="-0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music7">
+    </a-plane>
+    <!-- image (8).webp → music8 -->
+    <a-plane id="plane3b"
+      src="#img3b"
+      width="0.35" height="0.35"
+      position="0.2 0 0.02"
+      side="double"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music8">
+    </a-plane>
+  </a-entity>
+
+</a-scene>
+
+
+<script type="module">
+
+import { initializeApp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInAnonymously }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+/* ─── Firebase ─── */
+const firebaseConfig = {
+  apiKey: "AIzaSyCCXS7VkDZywh84EtS3AtTUfdvOmdKEyaM",
+  authDomain: "musicar-c18e9.firebaseapp.com",
+  databaseURL: "https://musicar-c18e9-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "musicar-c18e9",
+  storageBucket: "musicar-c18e9.firebasestorage.app",
+  messagingSenderId: "546300872409",
+  appId: "1:546300872409:web:53b357be74d3e5a136e0c8"
+};
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getDatabase(app);
+
+/* ─── 状態 ─── */
+let passwordHash = null;
+let sendingLock  = false;
+
+/*
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PLANE_MUSIC_MAP : planeのHTML id → 送信するmusic名
+  画像とmusicの対応を変えたい場合はここを編集してください。
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+*/
+const PLANE_MUSIC_MAP = {
+  plane0a: 'music1',
+  plane0b: 'music2',
+  plane1a: 'music3',
+  plane1b: 'music4',
+  plane2a: 'music5',
+  plane2b: 'music6',
+  plane3a: 'music7',
+  plane3b: 'music8',
+};
+
+/* activeTargetIndex : 現在検出中のtarget番号（-1=未検出） */
+let activeTargetIndex = -1;
+
+/* ─── ユーティリティ ─── */
+async function sha256(msg) {
+  const buf  = new TextEncoder().encode(msg);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+const logEl = document.getElementById('log');
+function log(msg, color) {
+  const t = new Date().toTimeString().slice(0,8);
+  const d = document.createElement('div');
+  d.style.color = color || '#00ff88';
+  d.textContent = '[' + t + '] ' + msg;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setStatus(mode, text) {
+  document.getElementById('status-dot').className    = mode;
+  document.getElementById('status-text').textContent = text;
+}
+
+function showSendFlash(label, success) {
+  const el = document.getElementById('send-flash');
+  document.getElementById('send-flash-icon').textContent  = success ? '♪' : '✕';
+  document.getElementById('send-flash-label').textContent = success ? label + ' sent' : 'Send failed';
+  el.classList.remove('active');
+  void el.offsetWidth;
+  el.classList.add('active');
+  el.addEventListener('animationend', () => el.classList.remove('active'), { once: true });
+}
+
+function spawnRipple(x, y) {
+  const r = document.createElement('div');
+  r.className = 'tap-ripple';
+  r.style.left = x + 'px';
+  r.style.top  = y + 'px';
+  document.body.appendChild(r);
+  r.addEventListener('animationend', () => r.remove());
+}
+
+/* ─── Firebase 送信 ─── */
+async function sendToFirebase(music) {
+  if (sendingLock) { log('Already sending, skip', '#888'); return; }
+  if (!passwordHash) { log('No password hash!', '#ff5555'); return; }
+  sendingLock = true;
+  setStatus('sending', 'Sending ' + music + '…');
+  log('Sending: ' + music, '#88ccff');
+  try {
+    await signInAnonymously(auth);
+    await set(ref(db, 'main'), {
+      command:      music,
+      passwordHash: passwordHash,
+      timestamp:    Date.now()
+    });
+    log('Sent OK: ' + music, '#ffdd55');
+    setStatus('sent', music + ' sent');
+    showSendFlash(music, true);
+  } catch(err) {
+    log('Send error: ' + err.message, '#ff5555');
+    setStatus('error', 'Error');
+    showSendFlash(music, false);
+  }
+  sendingLock = false;
+}
+
+/* ─── パスワード画面 ─── */
+const pwScreen = document.getElementById('pw-screen');
+const pwInput  = document.getElementById('pw-input');
+const pwBtn    = document.getElementById('pw-btn');
+const pwError  = document.getElementById('pw-error');
+
+async function submitPassword() {
+  const val = pwInput.value.trim();
+  if (!val) { pwError.textContent = 'パスワードを入力してください'; return; }
+  pwBtn.textContent = '…';
+  pwBtn.disabled = true;
+  passwordHash = await sha256(val);
+  log('Password set (hash: ' + passwordHash.slice(0,8) + '…)');
+  pwScreen.style.display = 'none';
+  setStatus('', 'Waiting for target');
+}
+pwBtn.addEventListener('click', submitPassword);
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword(); });
+
+/* ─── A-Frame コンポーネント ─── */
+AFRAME.registerComponent('smooth-transform', {
+  schema: { alpha: { type: 'number', default: 0.4 } },
+  init() {
+    this.smoothPos   = new THREE.Vector3();
+    this.smoothQuat  = new THREE.Quaternion();
+    this.smoothScale = new THREE.Vector3(1,1,1);
+    this.targetPos   = new THREE.Vector3();
+    this.targetQuat  = new THREE.Quaternion();
+    this.targetScale = new THREE.Vector3(1,1,1);
+    this.isVisible   = false;
+    this.el.addEventListener('targetFound', () => { this.isVisible = true;  this.firstFrame = true; });
+    this.el.addEventListener('targetLost',  () => { this.isVisible = false; });
+  },
+  tick() {
+    if (!this.isVisible) return;
+    const obj = this.el.object3D;
+    this.targetPos.copy(obj.position);
+    this.targetQuat.copy(obj.quaternion);
+    this.targetScale.copy(obj.scale);
+    if (this.firstFrame) {
+      this.smoothPos.copy(this.targetPos);
+      this.smoothQuat.copy(this.targetQuat);
+      this.smoothScale.copy(this.targetScale);
+      this.firstFrame = false; return;
+    }
+    const a = this.data.alpha;
+    this.smoothPos.lerp(this.targetPos, a);
+    this.smoothQuat.slerp(this.targetQuat, a);
+    this.smoothScale.lerp(this.targetScale, a);
+    obj.position.copy(this.smoothPos);
+    obj.quaternion.copy(this.smoothQuat);
+    obj.scale.copy(this.smoothScale);
+  }
+});
+
+/* ─── scene ready ─── */
+const scene = document.querySelector('a-scene');
+
+scene.addEventListener('loaded', () => {
+  log('scene loaded');
+  fixRenderer();
+  setupTargetEvents();
+  setupTapHandler();
+});
+
+scene.addEventListener('arReady', () => {
+  log('AR READY', '#88ccff');
+  fixRenderer();
+});
+scene.addEventListener('arError', () => log('AR ERROR', '#ff5555'));
+
+function fixRenderer() {
+  const r = scene.renderer;
+  if (!r) return;
+  r.setClearColor(0x000000, 0);
+  r.setClearAlpha(0);
+  const canvas = scene.querySelector('canvas');
+  if (canvas) canvas.style.background = 'transparent';
+}
+
+/* ─── ターゲット検出イベント ─── */
+function setupTargetEvents() {
+  for (let i = 0; i < 4; i++) {
+    const targetEl = document.getElementById('target' + i);
+    if (!targetEl) continue;
+    const idx = i;
+    targetEl.addEventListener('targetFound', () => {
+      activeTargetIndex = idx;
+      setStatus('found', 'target' + idx + ' — tap image to send');
+      log('Target found: target' + idx, '#ffdd55');
+    });
+    targetEl.addEventListener('targetLost', () => {
+      if (activeTargetIndex === idx) {
+        activeTargetIndex = -1;
+        setStatus('', 'Waiting for target');
+      }
+      log('Target lost: target' + idx, '#aaaaaa');
+    });
+  }
+}
+
+/* ─── タップ判定 ─── */
+/*
+  タップした座標を Raycaster でヒットテストし、
+  当たった plane の data-music 属性からmusic名を取得して送信する。
+  録画中でもタップ送信は有効（録画停止はボタンのみ）。
+*/
+function setupTapHandler() {
+  const canvas = scene.querySelector('canvas');
+  if (!canvas) { log('canvas not found for tap handler', '#ff5555'); return; }
+
+  /* すべての plane の mesh を収集 */
+  function getPlaneObjects() {
+    const result = [];
+    Object.keys(PLANE_MUSIC_MAP).forEach(planeId => {
+      const planeEl = document.getElementById(planeId);
+      if (!planeEl || !planeEl.object3D) return;
+      planeEl.object3D.traverse(obj => {
+        if (obj.isMesh) result.push({ mesh: obj, planeId });
+      });
+    });
+    return result;
+  }
+
+  function onTap(clientX, clientY) {
+    /* UI ボタン上のタップは無視 */
+    const uiIds = ['ss-btn','rec-btn','full-btn','log-clear'];
+    const elAtPoint = document.elementFromPoint(clientX, clientY);
+    if (uiIds.some(id => document.getElementById(id) === elAtPoint)) return;
+
+    /* アクティブなターゲットがなければスキップ */
+    if (activeTargetIndex < 0) {
+      log('Tap but no active target', '#888');
+      return;
+    }
+
+    const camera   = scene.camera;
+    const renderer = scene.renderer;
+    if (!camera || !renderer) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const ndcX =  ((clientX - rect.left) / rect.width)  * 2 - 1;
+    const ndcY = -((clientY - rect.top)  / rect.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+
+    /* アクティブtargetのplaneだけを対象にする */
+    const prefix = 'plane' + activeTargetIndex;
+    const activePlanes = getPlaneObjects().filter(p => p.planeId.startsWith(prefix));
+
+    if (activePlanes.length === 0) {
+      log('No plane objects found for target' + activeTargetIndex, '#ff5555');
+      return;
+    }
+
+    const meshes = activePlanes.map(p => p.mesh);
+    const hits   = raycaster.intersectObjects(meshes, true);
+
+    if (hits.length > 0) {
+      /* ヒットしたmeshが属するplaneIdを特定 */
+      const hitMesh  = hits[0].object;
+      const hitPlane = activePlanes.find(p => p.mesh === hitMesh);
+      const planeId  = hitPlane ? hitPlane.planeId : null;
+      const music    = planeId ? PLANE_MUSIC_MAP[planeId] : null;
+
+      if (music) {
+        log('Tap HIT: ' + planeId + ' → ' + music, '#88ffcc');
+        spawnRipple(clientX, clientY);
+        sendToFirebase(music);
+      }
+    } else {
+      /*
+        ヒットなし時の救済:
+        targetが検出されているにもかかわらず mesh にヒットしない場合は
+        タップ位置に最も近い plane の music を送信する。
+      */
+      log('Tap: no mesh hit, finding nearest plane for target' + activeTargetIndex, '#ffaa44');
+
+      /* 各planeの中心スクリーン座標を計算して最近傍を選ぶ */
+      let nearest = null, minDist = Infinity;
+      activePlanes.forEach(p => {
+        const world = new THREE.Vector3();
+        p.mesh.getWorldPosition(world);
+        world.project(camera);
+        const sx = ( world.x + 1) / 2 * rect.width  + rect.left;
+        const sy = (-world.y + 1) / 2 * rect.height + rect.top;
+        const dx = clientX - sx, dy = clientY - sy;
+        const dist = dx*dx + dy*dy;
+        if (dist < minDist) { minDist = dist; nearest = p; }
+      });
+
+      if (nearest) {
+        const music = PLANE_MUSIC_MAP[nearest.planeId];
+        log('Tap nearest: ' + nearest.planeId + ' → ' + music, '#ffaa44');
+        spawnRipple(clientX, clientY);
+        sendToFirebase(music);
+      }
+    }
+  }
+
+  /* touchstart（モバイル） */
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    onTap(t.clientX, t.clientY);
+  }, { passive: true });
+
+  /* mousedown（PC / デバッグ用） */
+  canvas.addEventListener('mousedown', e => {
+    onTap(e.clientX, e.clientY);
+  });
+
+  log('Tap handler ready', '#88ffcc');
+}
+
+/* ─── targets.mind check ─── */
+fetch('./targets.mind')
+  .then(r => log('targets.mind ' + (r.ok ? 'OK' : 'ERROR ' + r.status), r.ok ? '#00ff88' : '#ff5555'))
+  .catch(() => log('targets.mind fetch failed', '#ff5555'));
+
+window.onerror = (msg, url, line) => log('JS ERROR: ' + msg + ' line:' + line, '#ff5555');
+
+/* ─── log clear ─── */
+document.getElementById('log-clear').addEventListener('click', () => { logEl.innerHTML = ''; });
+
+/* ─── UI visibility helper ─── */
+const UI_SEL = ['#log','#log-clear','#ss-btn','#rec-btn','#full-btn','#status-bar'];
+function setUIVisible(v) {
+  UI_SEL.forEach(s => {
+    const el = document.querySelector(s);
+    if (el) el.style.visibility = v ? 'visible' : 'hidden';
+  });
+}
+
+/* ─── カウントダウン ─── */
+const countdownOverlay = document.getElementById('countdown-overlay');
+const countdownNum     = document.getElementById('countdown-num');
+const ssFlash          = document.getElementById('ss-flash');
+const recHint          = document.getElementById('rec-hint');
+
+function countdown(sec) {
+  return new Promise(resolve => {
+    countdownNum.textContent = sec;
+    countdownOverlay.classList.add('active');
+    let rem = sec;
+    const tick = () => {
+      rem--;
+      if (rem <= 0) { countdownOverlay.classList.remove('active'); resolve(); return; }
+      countdownNum.textContent = rem;
+      countdownNum.style.animation = 'none';
+      void countdownNum.offsetWidth;
+      countdownNum.style.animation = '';
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  });
+}
+
+function doFlash() {
+  return new Promise(resolve => {
+    ssFlash.classList.remove('active');
+    void ssFlash.offsetWidth;
+    ssFlash.classList.add('active');
+    ssFlash.addEventListener('animationend', () => { ssFlash.classList.remove('active'); resolve(); }, { once: true });
+  });
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a   = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+function nowString() {
+  const n = new Date(), p = x => String(x).padStart(2,'0');
+  return n.getFullYear() + p(n.getMonth()+1) + p(n.getDate()) + '_' + p(n.getHours()) + p(n.getMinutes()) + p(n.getSeconds());
+}
+
+/* ─── スクリーンショット ─── */
+function captureOnNextRender() {
+  return new Promise((resolve, reject) => {
+    const renderer = scene && scene.renderer;
+    if (!renderer) { reject(new Error('renderer not ready')); return; }
+    const orig = renderer.render.bind(renderer);
+    renderer.render = function(s, c) {
+      orig(s, c);
+      renderer.render = orig;
+      try {
+        const W = window.innerWidth, H = window.innerHeight;
+        const comp = Object.assign(document.createElement('canvas'), { width: W, height: H });
+        const ctx  = comp.getContext('2d');
+        const vid  = document.querySelector('video');
+        if (vid && vid.readyState >= 2) {
+          const sc = Math.max(W/vid.videoWidth, H/vid.videoHeight);
+          ctx.drawImage(vid, (W-vid.videoWidth*sc)/2, (H-vid.videoHeight*sc)/2, vid.videoWidth*sc, vid.videoHeight*sc);
+        }
+        ctx.drawImage(renderer.domElement, 0, 0, W, H);
+        comp.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob null')), 'image/png');
+      } catch(e) { reject(e); }
+    };
+  });
+}
+
+const ssBtn = document.getElementById('ss-btn');
+ssBtn.addEventListener('click', async () => {
+  ssBtn.disabled = true;
+  setUIVisible(false);
+  await countdown(3);
+  try {
+    const [blob] = await Promise.all([captureOnNextRender(), doFlash()]);
+    downloadBlob(blob, 'screenshot_' + nowString() + '.png');
+    log('SS saved', '#ffdd55');
+  } catch(e) { log('SS failed: ' + e.message, '#ff5555'); }
+  setUIVisible(true);
+  ssBtn.disabled = false;
+});
+
+/* ─── 録画 ─── */
+/*
+  録画の開始・停止はすべて rec-btn ボタンで行います。
+  画面タップは録画に影響しません（音楽送信のみ）。
+*/
+const recBtn   = document.getElementById('rec-btn');
+const micBadge = document.getElementById('mic-badge');
+let isRecording = false, mediaRecorder = null, recordedChunks = [];
+let compositeCanvas = null, compositeCtx = null, rafId = null, micStream = null;
+
+function drawFrame() {
+  if (!isRecording) return;
+  const W = compositeCanvas.width, H = compositeCanvas.height;
+  const renderer = scene && scene.renderer;
+  compositeCtx.clearRect(0, 0, W, H);
+  const vid = document.querySelector('video');
+  if (vid && vid.readyState >= 2) {
+    const sc = Math.max(W/vid.videoWidth, H/vid.videoHeight);
+    compositeCtx.drawImage(vid, (W-vid.videoWidth*sc)/2, (H-vid.videoHeight*sc)/2, vid.videoWidth*sc, vid.videoHeight*sc);
+  }
+  if (renderer) compositeCtx.drawImage(renderer.domElement, 0, 0, W, H);
+  rafId = requestAnimationFrame(drawFrame);
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  recHint.classList.remove('active');
+  recBtn.classList.remove('recording');
+  recBtn.disabled = false;
+  setUIVisible(true);
+  log('REC stopped', '#ffaa44');
+}
+
+async function startRecording() {
+  if (isRecording) return;
+  recBtn.disabled = true;
+  setUIVisible(false);
+  await countdown(3);
+  let audioTracks = [];
+  try {
+    micStream   = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioTracks = micStream.getAudioTracks();
+    log('Mic OK: ' + (audioTracks[0]?.label || 'unknown'), '#afffcc');
+  } catch(e) {
+    log('Mic unavailable: ' + e.message, '#ffaa44');
+    micStream = null;
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  compositeCanvas = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  compositeCtx = compositeCanvas.getContext('2d');
+  const fps = 30, videoStream = compositeCanvas.captureStream(fps);
+  audioTracks.forEach(t => videoStream.addTrack(t));
+  micBadge.textContent = audioTracks.length ? '🎙 ON' : '🎙 OFF';
+  micBadge.className   = audioTracks.length ? 'on' : 'off';
+  const mimes = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
+  const mimeType = mimes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+  try {
+    mediaRecorder = new MediaRecorder(videoStream, mimeType ? { mimeType } : {});
+  } catch(e) {
+    log('MediaRecorder init failed: ' + e.message, '#ff5555');
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    setUIVisible(true); recBtn.disabled = false; return;
+  }
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+    const name = 'video_' + nowString() + '.' + ext;
+    downloadBlob(blob, name);
+    log('REC saved: ' + name + ' (' + (blob.size/1024).toFixed(1) + 'KB)', '#ffdd55');
+    recordedChunks = [];
+  };
+  mediaRecorder.onerror = e => { log('REC error: ' + e.error, '#ff5555'); stopRecording(); };
+  isRecording = true;
+  mediaRecorder.start(200);
+  drawFrame();
+  recBtn.classList.add('recording');
+  recBtn.disabled = false;
+  recHint.classList.add('active');
+  setUIVisible(true); /* 録画中もUIを表示したまま */
+  log('REC started ' + W + '×' + H + ' @' + fps + 'fps audio=' + (audioTracks.length > 0), '#ff8844');
+}
+
+/* 録画ボタン：開始/停止トグル */
+recBtn.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
+
+/* ─── 全画面 ─── */
+const fullBtn = document.getElementById('full-btn');
+const isFS = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+fullBtn.addEventListener('click', () => {
+  if (isFS()) {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document)
+      .catch(e => log('FS exit: ' + e.message, '#ff5555'));
+  } else {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el)
+      .catch(e => log('FS enter: ' + e.message, '#ff5555'));
+  }
+});
+['fullscreenchange','webkitfullscreenchange'].forEach(ev =>
+  document.addEventListener(ev, () => log('FS: ' + (isFS() ? 'entered' : 'exited'), '#88ccff'))
+);
+
+</script>
+</body>
+</html>
