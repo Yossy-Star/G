@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MusicAR</title>
+ 
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <!-- MindAR -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+ 
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+ 
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Courier New', monospace;
+    }
+ 
+    video {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      object-fit: cover !important;
+      z-index: 0 !important;
+    }
+ 
+    a-scene {
+      position: fixed !important;
+      top: 0; left: 0;
+      width: 100vw !important; height: 100vh !important;
+      z-index: 1;
+    }
+    a-scene canvas { background: transparent !important; }
+ 
+    /* ─── パスワード画面 ─── */
+    #pw-screen {
+      position: fixed; inset: 0; z-index: 50000;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px;
+      background: #0a0a0a;
+    }
+    #pw-screen h1 {
+      font-size: clamp(22px, 6vw, 36px);
+      letter-spacing: 0.25em;
+      color: #e8e0cc;
+      text-transform: uppercase;
+    }
+    #pw-screen p {
+      font-size: 12px; color: #555;
+      letter-spacing: 0.15em; text-transform: uppercase;
+    }
+    #pw-input {
+      width: min(300px, 80vw);
+      padding: 14px 18px;
+      background: transparent;
+      border: none; border-bottom: 1px solid #888;
+      color: #e8e0cc;
+      font-family: 'Courier New', monospace;
+      font-size: 18px; letter-spacing: 0.2em;
+      outline: none; text-align: center;
+      caret-color: #e8e0cc;
+    }
+    #pw-input::placeholder { color: #444; }
+    #pw-input:focus { border-bottom-color: #c8b86e; }
+    #pw-btn {
+      width: min(300px, 80vw); padding: 14px;
+      background: transparent; border: 1px solid #555;
+      color: #e8e0cc;
+      font-family: 'Courier New', monospace;
+      font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase;
+      cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    #pw-btn:hover { border-color: #c8b86e; color: #c8b86e; }
+    #pw-error { font-size: 11px; color: #c0504d; letter-spacing: 0.1em; min-height: 16px; }
+ 
+    /* ─── 送信フラッシュ ─── */
+    #send-flash {
+      display: none; position: fixed; inset: 0; z-index: 40000;
+      align-items: center; justify-content: center;
+      pointer-events: none; background: rgba(0,0,0,0.45);
+    }
+    #send-flash.active { display: flex; animation: flash-fade 1.2s ease-out forwards; }
+    #send-flash-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    #send-flash-icon {
+      font-size: clamp(48px,18vw,90px); line-height: 1;
+      filter: drop-shadow(0 0 18px rgba(200,184,110,0.7));
+    }
+    #send-flash-label {
+      font-size: clamp(11px,3vw,15px); letter-spacing: 0.4em;
+      color: #c8b86e; text-transform: uppercase;
+    }
+    @keyframes flash-fade {
+      0% { opacity:0; } 15% { opacity:1; } 70% { opacity:1; } 100% { opacity:0; }
+    }
+ 
+    /* ─── タップリップル ─── */
+    .tap-ripple {
+      position: fixed; z-index: 35000;
+      pointer-events: none;
+      border-radius: 50%;
+      border: 2px solid rgba(200,184,110,0.9);
+      width: 60px; height: 60px;
+      margin-left: -30px; margin-top: -30px;
+      animation: ripple-anim 0.5s ease-out forwards;
+    }
+    @keyframes ripple-anim {
+      0%   { transform: scale(0.3); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+ 
+    /* ─── ステータスバー ─── */
+    #status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 9000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 16px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px);
+      font-size: 11px; letter-spacing: 0.18em;
+      color: #666; text-transform: uppercase;
+      gap: 12px; pointer-events: none;
+    }
+    #status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #333; flex-shrink: 0; transition: background 0.3s;
+    }
+    #status-dot.found   { background: #c8b86e; box-shadow: 0 0 6px #c8b86e; }
+    #status-dot.sending { background: #6eb8c8; box-shadow: 0 0 6px #6eb8c8; }
+    #status-dot.sent    { background: #6ec88a; box-shadow: 0 0 6px #6ec88a; }
+    #status-dot.error   { background: #c86e6e; box-shadow: 0 0 6px #c86e6e; }
+ 
+    /* ─── UI ボタン ─── */
+    .ctrl-btn {
+      position: fixed; z-index: 10000;
+      background: rgba(0,0,0,0.6); color: #fff;
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 8px;
+      width: 46px; height: 46px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; cursor: pointer; user-select: none;
+      transition: background 0.15s;
+    }
+    .ctrl-btn:active  { background: rgba(255,255,255,0.15); }
+    .ctrl-btn:disabled { opacity: 0.4; cursor: default; }
+ 
+    /* ボタン配置 */
+    #ss-btn   { left: 10px;  bottom: 44px; }
+    #rec-btn  { left: 66px;  bottom: 44px; gap: 2px; }
+ 
+    /* ─── ボリュームボタン ─── */
+    #vol-up-btn {
+      left: 122px; bottom: 44px;
+      font-size: 22px; font-weight: 700;
+      border-color: rgba(200,184,110,0.4);
+      color: #c8b86e;
+    }
+    #vol-down-btn {
+      left: 178px; bottom: 44px;
+      font-size: 22px; font-weight: 700;
+      border-color: rgba(200,184,110,0.4);
+      color: #c8b86e;
+    }
+    #vol-up-btn:active,
+    #vol-down-btn:active {
+      background: rgba(200,184,110,0.2);
+    }
+    .vol-pulse {
+      animation: vol-pop 0.25s ease-out;
+    }
+    @keyframes vol-pop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.25); }
+      100% { transform: scale(1); }
+    }
+ 
+    #full-btn { right: 10px; top: 10px; }
+
+    #mic-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; font-size: 9px; border-radius: 50%;
+    }
+    #mic-badge.on  { background: rgba(0,200,100,0.35); color: #affcc0; }
+    #mic-badge.off { background: rgba(255,80,80,0.3);  color: #ffaaaa; }
+    #rec-btn.recording {
+      background: rgba(160,0,0,0.7); border-color: #ff4444;
+      animation: rec-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes rec-pulse { 0%,100%{opacity:1;} 50%{opacity:0.65;} }
+ 
+    /* ─── カウントダウン ─── */
+    #countdown-overlay {
+      display: none; position: fixed; inset: 0; z-index: 20000;
+      align-items: center; justify-content: center;
+      background: transparent; pointer-events: none;
+    }
+    #countdown-overlay.active { display: flex; }
+    #countdown-num {
+      font-size: clamp(80px,25vw,160px);
+      font-family: monospace; font-weight: 900; color: #fff;
+      text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 2px 6px rgba(0,0,0,0.9);
+      animation: pop 0.4s ease-out;
+    }
+    @keyframes pop { 0%{transform:scale(1.6);opacity:0;} 60%{transform:scale(0.95);opacity:1;} 100%{transform:scale(1);opacity:1;} }
+    #ss-flash {
+      display: none; position: fixed; inset: 0; z-index: 30000;
+      background: #fff; pointer-events: none;
+    }
+    #ss-flash.active { display: block; animation: flash-anim 0.35s ease-out forwards; }
+    @keyframes flash-anim { 0%{opacity:1;} 100%{opacity:0;} }
+    #rec-hint {
+      display: none; position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 10000;
+      background: rgba(160,0,0,0.7); color: #fff;
+      font-family: monospace; font-size: 13px;
+      padding: 7px 16px; border-radius: 20px;
+      border: 1px solid rgba(255,100,100,0.5);
+      pointer-events: none; white-space: nowrap;
+    }
+    #rec-hint.active { display: block; }
+  </style>
+</head>
+<body>
+ 
+<!-- ─── パスワード画面 ─── -->
+<div id="pw-screen">
+  <h1>MusicAR</h1>
+  <p>Enter password to continue</p>
+  <input type="password" id="pw-input" placeholder="••••••••" autocomplete="current-password">
+  <button id="pw-btn">Enter</button>
+  <div id="pw-error"></div>
+</div>
+ 
+<!-- ─── 送信フラッシュ ─── -->
+<div id="send-flash">
+  <div id="send-flash-inner">
+    <div id="send-flash-icon">♪</div>
+    <div id="send-flash-label">Sending…</div>
+  </div>
+</div>
+ 
+<!-- ─── ステータスバー ─── -->
+<div id="status-bar">
+  <div id="status-dot"></div>
+  <span id="status-text">Waiting for target</span>
+</div>
+ 
+<!-- ─── UI ボタン ─── -->
+<button id="full-btn" class="ctrl-btn">⛶</button>
+<button id="ss-btn"   class="ctrl-btn">📷</button>
+<button id="rec-btn"  class="ctrl-btn">🎥<span id="mic-badge" class="off">🎙</span></button>
+ 
+<!-- ─── ボリュームボタン ─── -->
+<button id="vol-up-btn"   class="ctrl-btn">＋</button>
+<button id="vol-down-btn" class="ctrl-btn">－</button>
+ 
+<!-- カウントダウン -->
+<div id="countdown-overlay"><div id="countdown-num">3</div></div>
+<div id="ss-flash"></div>
+<div id="rec-hint">⏹ ボタンで録画停止</div>
+ 
+<!-- ─── A-Frame シーン ─── -->
+<a-scene
+  color-space="sRGB"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true; preserveDrawingBuffer: true;"
+  mindar-image="
+    imageTargetSrc: ./targets.mind;
+    autoStart: true;
+    uiLoading: true;
+    uiScanning: true;
+    uiError: true;
+    filterMinCF: 0.1;
+    filterBeta: 10;
+    missTolerance: 5;
+    warmupTolerance: 3;
+    maxTrack: 1;
+  "
+  embedded>
+ 
+  <a-assets>
+    <!-- target0 用 -->
+    <img id="img0a" src="./image (1).webp" crossorigin="anonymous">
+    <img id="img0b" src="./image (2).webp" crossorigin="anonymous">
+    <!-- target1 用 -->
+    <img id="img1a" src="./image (3).webp" crossorigin="anonymous">
+    <img id="img1b" src="./image (4).webp" crossorigin="anonymous">
+    <!-- target2 用 -->
+    <img id="img2a" src="./image (5).webp" crossorigin="anonymous">
+    <img id="img2b" src="./image (6).webp" crossorigin="anonymous">
+    <!-- target3 用 -->
+    <img id="img3a" src="./image (7).webp" crossorigin="anonymous">
+    <img id="img3b" src="./image (8).webp" crossorigin="anonymous">
+  </a-assets>
+ 
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+ 
+  <!-- ── target0 ── -->
+  <a-entity id="target0" mindar-image-target="targetIndex: 0" smooth-transform="alpha: 0.4">
+    <a-plane id="plane0a"
+      src="#img0a"
+      width="0.5" height="0.5"
+      position="-0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music1"
+      edge-fade="radius: 0.25">
+    </a-plane>
+    <a-plane id="plane0b"
+      src="#img0b"
+      width="0.5" height="0.5"
+      position="0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music2"
+      edge-fade="radius: 0.25">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target1 ── -->
+  <a-entity id="target1" mindar-image-target="targetIndex: 1" smooth-transform="alpha: 0.4">
+    <a-plane id="plane1a"
+      src="#img1a"
+      width="0.5" height="0.5"
+      position="-0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music3"
+      edge-fade="radius: 0.25">
+    </a-plane>
+    <a-plane id="plane1b"
+      src="#img1b"
+      width="0.5" height="0.5"
+      position="0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music4"
+      edge-fade="radius: 0.25">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target2 ── -->
+  <a-entity id="target2" mindar-image-target="targetIndex: 2" smooth-transform="alpha: 0.4">
+    <a-plane id="plane2a"
+      src="#img2a"
+      width="0.5" height="0.5"
+      position="-0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music5"
+      edge-fade="radius: 0.25">
+    </a-plane>
+    <a-plane id="plane2b"
+      src="#img2b"
+      width="0.5" height="0.5"
+      position="0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music6"
+      edge-fade="radius: 0.25">
+    </a-plane>
+  </a-entity>
+
+  <!-- ── target3 ── -->
+  <a-entity id="target3" mindar-image-target="targetIndex: 3" smooth-transform="alpha: 0.4">
+    <a-plane id="plane3a"
+      src="#img3a"
+      width="0.5" height="0.5"
+      position="-0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music7"
+      edge-fade="radius: 0.25">
+    </a-plane>
+    <a-plane id="plane3b"
+      src="#img3b"
+      width="0.5" height="0.5"
+      position="0.7 0 0.02"
+      side="front"
+      material="shader: flat; transparent: true; alphaTest: 0.5;"
+      data-music="music8"
+      edge-fade="radius: 0.25">
+    </a-plane>
+  </a-entity>
+ 
+</a-scene>
+ 
+ 
+<script type="module">
+ 
+import { initializeApp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInAnonymously }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+ 
+/* ─── Firebase ─── */
+const firebaseConfig = {
+  apiKey: "AIzaSyCCXS7VkDZywh84EtS3AtTUfdvOmdKEyaM",
+  authDomain: "musicar-c18e9.firebaseapp.com",
+  databaseURL: "https://musicar-c18e9-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "musicar-c18e9",
+  storageBucket: "musicar-c18e9.firebasestorage.app",
+  messagingSenderId: "546300872409",
+  appId: "1:546300872409:web:53b357be74d3e5a136e0c8"
+};
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getDatabase(app);
+ 
+/* ─── 状態 ─── */
+let passwordHash  = null;
+let sendingLock   = false;
+let authPromise   = null;
+ 
+function ensureAuth() {
+  if (!authPromise) authPromise = signInAnonymously(auth);
+  return authPromise;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PLANE_MUSIC_MAP
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const PLANE_MUSIC_MAP = {
+  plane0a: 'music1',
+  plane0b: 'music2',
+  plane1a: 'music3',
+  plane1b: 'music4',
+  plane2a: 'music5',
+  plane2b: 'music6',
+  plane3a: 'music7',
+  plane3b: 'music8',
+};
+ 
+let activeTargetIndex = -1;
+ 
+/* ─── ユーティリティ ─── */
+async function sha256(msg) {
+  const buf  = new TextEncoder().encode(msg);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+}
+ 
+function setStatus(mode, text) {
+  document.getElementById('status-dot').className    = mode;
+  document.getElementById('status-text').textContent = text;
+}
+ 
+function showSendFlash(label, success) {
+  const el = document.getElementById('send-flash');
+  document.getElementById('send-flash-icon').textContent  = success ? '♪' : '✕';
+  document.getElementById('send-flash-label').textContent = success ? label + ' sent' : 'Send failed';
+  el.classList.remove('active');
+  void el.offsetWidth;
+  el.classList.add('active');
+  el.addEventListener('animationend', () => el.classList.remove('active'), { once: true });
+}
+ 
+function spawnRipple(x, y) {
+  const r = document.createElement('div');
+  r.className = 'tap-ripple';
+  r.style.left = x + 'px';
+  r.style.top  = y + 'px';
+  document.body.appendChild(r);
+  r.addEventListener('animationend', () => r.remove());
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   STAR ORBIT EFFECT
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* 星テクスチャを1枚作成 */
+function makeStarTexture() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size / 2;
+  const grd = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  grd.addColorStop(0,   'rgba(255,245,200,1)');
+  grd.addColorStop(0.3, 'rgba(200,184,110,0.8)');
+  grd.addColorStop(1,   'rgba(200,184,110,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(cx, cx, cx, 0, Math.PI * 2);
+  ctx.fill();
+  return new THREE.CanvasTexture(c);
+}
+
+/* リングテクスチャ（グラデーションリング） */
+function makeRingTexture() {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size / 2;
+  const grd = ctx.createRadialGradient(cx, cx, cx * 0.72, cx, cx, cx * 0.98);
+  grd.addColorStop(0,   'rgba(200,184,110,0)');
+  grd.addColorStop(0.4, 'rgba(200,184,110,0.55)');
+  grd.addColorStop(0.6, 'rgba(255,245,200,0.85)');
+  grd.addColorStop(1,   'rgba(200,184,110,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(cx, cx, cx, 0, Math.PI * 2);
+  ctx.fill();
+  return new THREE.CanvasTexture(c);
+}
+
+const _starTex = makeStarTexture();
+const _ringTex = makeRingTexture();
+
+/*
+  planeサイズ = 0.5 × 0.5
+  画像に円がかからないように:
+    内周リング半径 = planeの対角線の半分 × 余裕 = sqrt(0.25^2 + 0.25^2) ≈ 0.354
+    → INNER_RING_R = 0.36 (画像の外側ギリギリ)
+  
+  外周リングは INNER_RING_R より必ず大きく保つ。
+  パルスで揺れる範囲:
+    min = INNER_RING_R + 0.04 = 0.40
+    max = INNER_RING_R + 0.16 = 0.52
+  
+  星軌道はOUTER_RING_BASE上を周回。
+*/
+const PLANE_HALF   = 0.25;                                    // plane幅の半分
+const INNER_RING_R = Math.sqrt(PLANE_HALF ** 2 + PLANE_HALF ** 2) + 0.01; // ≈0.364
+const OUTER_BASE   = INNER_RING_R + 0.10;                    // 外周リングの基準半径
+const OUTER_PULSE_AMP = 0.08;                                 // ±この幅でパルス
+// 外周リングが内周より小さくならない最小値
+const OUTER_MIN    = INNER_RING_R + 0.02;
+
+/* 1つのplaneにエフェクトを生成して返す */
+function createOrbitEffect(planeEl) {
+  const group = new THREE.Group();
+
+  /* ── 内周リング（常に固定サイズ・画像の外縁） ── */
+  const innerGeo = new THREE.PlaneGeometry(INNER_RING_R * 2, INNER_RING_R * 2);
+  const innerMat = new THREE.MeshBasicMaterial({
+    map: _ringTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.0,
+  });
+  const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+  innerMesh.renderOrder = 2;
+  group.add(innerMesh);
+
+  /* ── 外周リング（パルスで大きく小さく・タップ誘導） ── */
+  const outerGeo = new THREE.PlaneGeometry(1, 1); // scaleで制御するので1x1
+  const outerMat = new THREE.MeshBasicMaterial({
+    map: _ringTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.0,
+  });
+  const outerMesh = new THREE.Mesh(outerGeo, outerMat);
+  outerMesh.renderOrder = 1;
+  group.add(outerMesh);
+
+  /* ── 外周グローリング（outerよりさらに大きい薄いグロー） ── */
+  const glowGeo = new THREE.PlaneGeometry(1, 1);
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: _ringTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.0,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.renderOrder = 0;
+  group.add(glowMesh);
+
+  /* ── 星パーティクル（外周リング上を周回） ── */
+  const STAR_COUNT = 8;
+  const stars = [];
+  const starMat = new THREE.SpriteMaterial({
+    map: _starTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.0,
+  });
+
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const mat = starMat.clone();
+    const sprite = new THREE.Sprite(mat);
+    const baseSize = 0.055 + Math.random() * 0.03;
+    sprite.scale.set(baseSize, baseSize, 1);
+    sprite.renderOrder = 3;
+    group.add(sprite);
+    stars.push({
+      sprite,
+      mat,
+      phaseOffset: (i / STAR_COUNT) * Math.PI * 2,
+      speedMult: 0.85 + Math.random() * 0.30,
+      radiusOffset: (Math.random() - 0.5) * 0.02,  // 外周リング上に密集させる
+      zOffset: (Math.random() - 0.5) * 0.04,
+      size: baseSize,
+    });
+  }
+
+  planeEl.object3D.add(group);
+  group.position.set(0, 0, 0.01);
+
+  return {
+    group,
+    innerMesh, innerMat,
+    outerMesh, outerMat,
+    glowMesh,  glowMat,
+    stars,
+    starMat,
+    visible: false,
+    fadeAlpha: 0,
+  };
+}
+
+/* 全effectを管理するMap: planeId → effect */
+const effectMap = {};
+
+/* ─── A-Frame コンポーネント ─── */
+AFRAME.registerComponent('smooth-transform', {
+  schema: { alpha: { type: 'number', default: 0.4 } },
+  init() {
+    this.smoothPos   = new THREE.Vector3();
+    this.smoothScale = new THREE.Vector3(1,1,1);
+    this.targetPos   = new THREE.Vector3();
+    this.targetScale = new THREE.Vector3(1,1,1);
+    this._camQuat    = new THREE.Quaternion();
+    this._parentQuat = new THREE.Quaternion();
+    this.isVisible   = false;
+    this.el.addEventListener('targetFound', () => { this.isVisible = true;  this.firstFrame = true; });
+    this.el.addEventListener('targetLost',  () => { this.isVisible = false; });
+  },
+  tick() {
+    if (!this.isVisible) return;
+    const obj = this.el.object3D;
+ 
+    this.targetPos.copy(obj.position);
+    this.targetScale.copy(obj.scale);
+ 
+    if (this.firstFrame) {
+      this.smoothPos.copy(this.targetPos);
+      this.smoothScale.copy(this.targetScale);
+      this.firstFrame = false;
+      return;
+    }
+ 
+    const a = this.data.alpha;
+    this.smoothPos.lerp(this.targetPos, a);
+    this.smoothScale.lerp(this.targetScale, a);
+ 
+    obj.position.copy(this.smoothPos);
+    obj.scale.copy(this.smoothScale);
+ 
+    const camera = this.el.sceneEl.camera;
+    if (camera) {
+      camera.getWorldQuaternion(this._camQuat);
+      if (obj.parent) {
+        obj.parent.getWorldQuaternion(this._parentQuat);
+        this._parentQuat.invert();
+        obj.quaternion.copy(this._parentQuat).multiply(this._camQuat);
+      } else {
+        obj.quaternion.copy(this._camQuat);
+      }
+    }
+  }
+});
+
+/* ─── edge-fade コンポーネント ─── */
+AFRAME.registerComponent('edge-fade', {
+  schema: { radius: { type: 'number', default: 0.25 } },
+  init() {
+    this._applied = false;
+    this.el.addEventListener('materialtextureloaded', () => {
+      this._applyFade();
+    });
+    if (this.el.components.material && this.el.components.material.material &&
+        this.el.components.material.material.map) {
+      this._applyFade();
+    }
+  },
+  _applyFade() {
+    if (this._applied) return;
+    const mat = this.el.components.material && this.el.components.material.material;
+    if (!mat || !mat.map || !mat.map.image) return;
+
+    const img = mat.map.image;
+    if (!img.complete && img.tagName === 'IMG') {
+      img.addEventListener('load', () => this._applyFade(), { once: true });
+      return;
+    }
+
+    const W = img.naturalWidth  || img.width  || 512;
+    const H = img.naturalHeight || img.height || 512;
+    const canvas = document.createElement('canvas');
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2;
+    const fadeStart = 0.45;
+
+    const imageData = ctx.getImageData(0, 0, W, H);
+    const data = imageData.data;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * 4;
+        const dx = (x - cx) / cx;
+        const dy = (y - cy) / cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const normDist = dist / Math.SQRT2;
+        if (normDist > fadeStart) {
+          const t = Math.min((normDist - fadeStart) / (1 - fadeStart), 1);
+          const fade = t * t * (3 - 2 * t);
+          data[idx + 3] = Math.round(data[idx + 3] * (1 - fade));
+        }
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const newTex = new THREE.CanvasTexture(canvas);
+    newTex.colorSpace = THREE.SRGBColorSpace;
+    mat.map = newTex;
+    mat.needsUpdate = true;
+    this._applied = true;
+  }
+});
+
+/* ─── scene ready ─── */
+const scene = document.querySelector('a-scene');
+ 
+scene.addEventListener('loaded', () => {
+  fixRenderer();
+  setupEffects();
+  setupTargetEvents();
+  setupTapHandler();
+  startEffectLoop();
+});
+ 
+scene.addEventListener('arReady', () => { fixRenderer(); });
+ 
+function fixRenderer() {
+  const r = scene.renderer;
+  if (!r) return;
+  r.setClearColor(0x000000, 0);
+  r.setClearAlpha(0);
+  const canvas = scene.querySelector('canvas');
+  if (canvas) canvas.style.background = 'transparent';
+}
+
+/* ─── エフェクト初期化 ─── */
+function setupEffects() {
+  Object.keys(PLANE_MUSIC_MAP).forEach(planeId => {
+    const el = document.getElementById(planeId);
+    if (!el) return;
+    effectMap[planeId] = createOrbitEffect(el);
+  });
+}
+
+/* ─── エフェクトアニメーションループ ─── */
+let _lastT = 0;
+function startEffectLoop() {
+  function tick(t) {
+    requestAnimationFrame(tick);
+    const dt = Math.min((t - _lastT) / 1000, 0.05);
+    _lastT = t;
+    const elapsed = t / 1000;
+
+    Object.entries(effectMap).forEach(([planeId, eff]) => {
+      const targetAlpha = eff.visible ? 1 : 0;
+      eff.fadeAlpha += (targetAlpha - eff.fadeAlpha) * (eff.visible ? 0.06 : 0.04);
+      const fa = eff.fadeAlpha;
+
+      /* ── 内周リング（固定サイズ・画像外縁ギリギリ） ── */
+      const innerSize = INNER_RING_R * 2;
+      eff.innerMesh.scale.set(innerSize, innerSize, 1);
+      eff.innerMat.opacity = fa * 0.55;
+      eff.innerMesh.rotation.z = elapsed * 0.12;
+
+      /* ── 外周リング（パルスアニメーション） ──
+         sin波で OUTER_BASE ± OUTER_PULSE_AMP の範囲で伸縮。
+         ただし OUTER_MIN より小さくならない制約を適用。
+      */
+      const rawPulse = OUTER_BASE + Math.sin(elapsed * 2.2) * OUTER_PULSE_AMP;
+      const outerR   = Math.max(rawPulse, OUTER_MIN);
+      const outerSize = outerR * 2;
+      eff.outerMesh.scale.set(outerSize, outerSize, 1);
+      // パルスに合わせてopacityも連動（収縮時に明るく、拡張時に薄く）
+      const pulseNorm = (rawPulse - (OUTER_BASE - OUTER_PULSE_AMP)) / (OUTER_PULSE_AMP * 2); // 0~1
+      const outerOpacity = 0.50 + (1 - pulseNorm) * 0.35; // 収縮時に最大輝度
+      eff.outerMat.opacity = fa * outerOpacity;
+      eff.outerMesh.rotation.z = -elapsed * 0.18;
+
+      /* ── グローリング（外周より一回り大きい） ── */
+      const glowR    = outerR * 1.30;
+      const glowSize = glowR * 2;
+      eff.glowMesh.scale.set(glowSize, glowSize, 1);
+      eff.glowMat.opacity = fa * 0.18;
+      eff.glowMesh.rotation.z = elapsed * 0.07;
+
+      /* ── 星の軌道（外周リング上を周回） ── */
+      eff.stars.forEach((s) => {
+        // 星は外周リングの半径に追従する
+        const starR = outerR + s.radiusOffset;
+        const angle = elapsed * 1.1 * s.speedMult + s.phaseOffset;
+        s.sprite.position.set(
+          Math.cos(angle) * starR,
+          Math.sin(angle) * starR,
+          s.zOffset
+        );
+
+        const sparkle = 0.5 + 0.5 * Math.sin(elapsed * 4.5 * s.speedMult + s.phaseOffset * 2.3);
+        s.mat.opacity = fa * (0.55 + sparkle * 0.45);
+
+        const behindFactor = 0.7 + 0.3 * ((Math.sin(angle) + 1) / 2);
+        const sz = s.size * behindFactor * (0.9 + sparkle * 0.2);
+        s.sprite.scale.set(sz, sz, 1);
+      });
+    });
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ─── ターゲット検出イベント ─── */
+function setupTargetEvents() {
+  for (let i = 0; i < 4; i++) {
+    const targetEl = document.getElementById('target' + i);
+    if (!targetEl) continue;
+    const idx = i;
+    targetEl.addEventListener('targetFound', () => {
+      activeTargetIndex = idx;
+      setStatus('found', 'target' + idx + ' — tap image to send');
+
+      Object.keys(PLANE_MUSIC_MAP).forEach(pid => {
+        if (pid.startsWith('plane' + idx) && effectMap[pid]) {
+          effectMap[pid].visible = true;
+        }
+      });
+    });
+    targetEl.addEventListener('targetLost', () => {
+      if (activeTargetIndex === idx) {
+        activeTargetIndex = -1;
+        setStatus('', 'Waiting for target');
+      }
+
+      Object.keys(PLANE_MUSIC_MAP).forEach(pid => {
+        if (pid.startsWith('plane' + idx) && effectMap[pid]) {
+          effectMap[pid].visible = false;
+        }
+      });
+    });
+  }
+}
+ 
+/* ─── タップ判定 ─── */
+function setupTapHandler() {
+  const canvas = scene.querySelector('canvas');
+  if (!canvas) return;
+ 
+  const planeCache = [];
+  Object.keys(PLANE_MUSIC_MAP).forEach(planeId => {
+    const planeEl = document.getElementById(planeId);
+    if (!planeEl || !planeEl.object3D) return;
+    planeEl.object3D.traverse(obj => {
+      if (obj.isMesh) planeCache.push({ mesh: obj, planeId });
+    });
+  });
+ 
+  const raycaster  = new THREE.Raycaster();
+  const _worldPos  = new THREE.Vector3();
+ 
+  function onTap(clientX, clientY) {
+    const uiIds = ['ss-btn','rec-btn','full-btn','vol-up-btn','vol-down-btn'];
+    const elAtPoint = document.elementFromPoint(clientX, clientY);
+    if (uiIds.some(id => document.getElementById(id) === elAtPoint)) return;
+ 
+    if (activeTargetIndex < 0) return;
+ 
+    const camera   = scene.camera;
+    const renderer = scene.renderer;
+    if (!camera || !renderer) return;
+ 
+    const rect = canvas.getBoundingClientRect();
+    const ndcX =  ((clientX - rect.left) / rect.width)  * 2 - 1;
+    const ndcY = -((clientY - rect.top)  / rect.height) * 2 + 1;
+ 
+    raycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+ 
+    const prefix = 'plane' + activeTargetIndex;
+    const activePlanes = planeCache.filter(p => p.planeId.startsWith(prefix));
+ 
+    if (activePlanes.length === 0) return;
+ 
+    const meshes = activePlanes.map(p => p.mesh);
+    const hits   = raycaster.intersectObjects(meshes, true);
+ 
+    if (hits.length > 0) {
+      const hitMesh  = hits[0].object;
+      const hitPlane = activePlanes.find(p => p.mesh === hitMesh);
+      const planeId  = hitPlane ? hitPlane.planeId : null;
+      const music    = planeId ? PLANE_MUSIC_MAP[planeId] : null;
+ 
+      if (music) {
+        spawnRipple(clientX, clientY);
+        sendToFirebase(music);
+      }
+    } else {
+      let nearest = null, minDist = Infinity;
+      activePlanes.forEach(p => {
+        p.mesh.getWorldPosition(_worldPos);
+        _worldPos.project(camera);
+        const sx = ( _worldPos.x + 1) / 2 * rect.width  + rect.left;
+        const sy = (-_worldPos.y + 1) / 2 * rect.height + rect.top;
+        const dx = clientX - sx, dy = clientY - sy;
+        const dist = dx*dx + dy*dy;
+        if (dist < minDist) { minDist = dist; nearest = p; }
+      });
+ 
+      if (nearest) {
+        const music = PLANE_MUSIC_MAP[nearest.planeId];
+        spawnRipple(clientX, clientY);
+        sendToFirebase(music);
+      }
+    }
+  }
+ 
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    onTap(t.clientX, t.clientY);
+  }, { passive: true });
+ 
+  canvas.addEventListener('mousedown', e => {
+    onTap(e.clientX, e.clientY);
+  });
+}
+ 
+/* ─── Firebase 送信 ─── */
+async function sendToFirebase(music) {
+  if (sendingLock) return;
+  if (!passwordHash) return;
+  sendingLock = true;
+  setStatus('sending', 'Sending ' + music + '…');
+  try {
+    await ensureAuth();
+    await set(ref(db, 'main'), {
+      command:      music,
+      passwordHash: passwordHash,
+      timestamp:    Date.now()
+    });
+    setStatus('sent', music + ' sent');
+    showSendFlash(music, true);
+  } catch(err) {
+    setStatus('error', 'Error');
+    showSendFlash(music, false);
+  }
+  sendingLock = false;
+}
+
+/* ─── パスワード画面 ─── */
+const pwScreen = document.getElementById('pw-screen');
+const pwInput  = document.getElementById('pw-input');
+const pwBtn    = document.getElementById('pw-btn');
+const pwError  = document.getElementById('pw-error');
+ 
+async function submitPassword() {
+  const val = pwInput.value.trim();
+  if (!val) { pwError.textContent = 'パスワードを入力してください'; return; }
+  pwBtn.textContent = '…';
+  pwBtn.disabled = true;
+  passwordHash = await sha256(val);
+  pwScreen.style.display = 'none';
+  setStatus('', 'Waiting for target');
+}
+pwBtn.addEventListener('click', submitPassword);
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword(); });
+
+/* ─── ボリュームボタン ─── */
+const volUpBtn   = document.getElementById('vol-up-btn');
+const volDownBtn = document.getElementById('vol-down-btn');
+ 
+function triggerVolPulse(btn) {
+  btn.classList.remove('vol-pulse');
+  void btn.offsetWidth;
+  btn.classList.add('vol-pulse');
+  btn.addEventListener('animationend', () => btn.classList.remove('vol-pulse'), { once: true });
+}
+ 
+volUpBtn.addEventListener('click', () => {
+  triggerVolPulse(volUpBtn);
+  sendToFirebase('volume_up');
+});
+ 
+volDownBtn.addEventListener('click', () => {
+  triggerVolPulse(volDownBtn);
+  sendToFirebase('volume_down');
+});
+ 
+/* ─── targets.mind check ─── */
+fetch('./targets.mind').catch(() => {});
+ 
+window.onerror = () => {};
+
+/* ─── UI visibility helper ─── */
+const UI_ELS = ['ss-btn','rec-btn','full-btn','status-bar','vol-up-btn','vol-down-btn']
+  .map(id => document.getElementById(id)).filter(Boolean);
+function setUIVisible(v) {
+  const vis = v ? 'visible' : 'hidden';
+  UI_ELS.forEach(el => { el.style.visibility = vis; });
+}
+ 
+/* ─── カウントダウン ─── */
+const countdownOverlay = document.getElementById('countdown-overlay');
+const countdownNum     = document.getElementById('countdown-num');
+const ssFlash          = document.getElementById('ss-flash');
+const recHint          = document.getElementById('rec-hint');
+ 
+function countdown(sec) {
+  return new Promise(resolve => {
+    countdownNum.textContent = sec;
+    countdownOverlay.classList.add('active');
+    let rem = sec;
+    const tick = () => {
+      rem--;
+      if (rem <= 0) { countdownOverlay.classList.remove('active'); resolve(); return; }
+      countdownNum.textContent = rem;
+      countdownNum.style.animation = 'none';
+      void countdownNum.offsetWidth;
+      countdownNum.style.animation = '';
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  });
+}
+ 
+function doFlash() {
+  return new Promise(resolve => {
+    ssFlash.classList.remove('active');
+    void ssFlash.offsetWidth;
+    ssFlash.classList.add('active');
+    ssFlash.addEventListener('animationend', () => { ssFlash.classList.remove('active'); resolve(); }, { once: true });
+  });
+}
+ 
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a   = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+ 
+function nowString() {
+  const n = new Date(), p = x => String(x).padStart(2,'0');
+  return n.getFullYear() + p(n.getMonth()+1) + p(n.getDate()) + '_' + p(n.getHours()) + p(n.getMinutes()) + p(n.getSeconds());
+}
+ 
+/* ─── スクリーンショット ─── */
+function captureOnNextRender() {
+  return new Promise((resolve, reject) => {
+    const renderer = scene && scene.renderer;
+    if (!renderer) { reject(new Error('renderer not ready')); return; }
+    const orig = renderer.render.bind(renderer);
+    renderer.render = function(s, c) {
+      orig(s, c);
+      renderer.render = orig;
+      try {
+        const W = window.innerWidth, H = window.innerHeight;
+        const comp = Object.assign(document.createElement('canvas'), { width: W, height: H });
+        const ctx  = comp.getContext('2d');
+        const vid  = document.querySelector('video');
+        if (vid && vid.readyState >= 2) {
+          const sc = Math.max(W/vid.videoWidth, H/vid.videoHeight);
+          ctx.drawImage(vid, (W-vid.videoWidth*sc)/2, (H-vid.videoHeight*sc)/2, vid.videoWidth*sc, vid.videoHeight*sc);
+        }
+        ctx.drawImage(renderer.domElement, 0, 0, W, H);
+        comp.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob null')), 'image/png');
+      } catch(e) { reject(e); }
+    };
+  });
+}
+ 
+const ssBtn = document.getElementById('ss-btn');
+ssBtn.addEventListener('click', async () => {
+  ssBtn.disabled = true;
+  setUIVisible(false);
+  await countdown(3);
+  try {
+    const [blob] = await Promise.all([captureOnNextRender(), doFlash()]);
+    downloadBlob(blob, 'screenshot_' + nowString() + '.png');
+  } catch(e) {}
+  setUIVisible(true);
+  ssBtn.disabled = false;
+});
+ 
+/* ─── 録画 ─── */
+const recBtn   = document.getElementById('rec-btn');
+const micBadge = document.getElementById('mic-badge');
+let isRecording = false, mediaRecorder = null, recordedChunks = [];
+let compositeCanvas = null, compositeCtx = null, rafId = null, micStream = null;
+ 
+function drawFrame() {
+  if (!isRecording) return;
+  const W = compositeCanvas.width, H = compositeCanvas.height;
+  const renderer = scene && scene.renderer;
+  compositeCtx.clearRect(0, 0, W, H);
+  const vid = document.querySelector('video');
+  if (vid && vid.readyState >= 2) {
+    const sc = Math.max(W/vid.videoWidth, H/vid.videoHeight);
+    compositeCtx.drawImage(vid, (W-vid.videoWidth*sc)/2, (H-vid.videoHeight*sc)/2, vid.videoWidth*sc, vid.videoHeight*sc);
+  }
+  if (renderer) compositeCtx.drawImage(renderer.domElement, 0, 0, W, H);
+  rafId = requestAnimationFrame(drawFrame);
+}
+ 
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  recHint.classList.remove('active');
+  recBtn.classList.remove('recording');
+  recBtn.disabled = false;
+  setUIVisible(true);
+}
+ 
+async function startRecording() {
+  if (isRecording) return;
+  recBtn.disabled = true;
+  setUIVisible(false);
+  await countdown(3);
+  let audioTracks = [];
+  try {
+    micStream   = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioTracks = micStream.getAudioTracks();
+  } catch(e) {
+    micStream = null;
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  compositeCanvas = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  compositeCtx = compositeCanvas.getContext('2d');
+  const fps = 30, videoStream = compositeCanvas.captureStream(fps);
+  audioTracks.forEach(t => videoStream.addTrack(t));
+  micBadge.textContent = audioTracks.length ? '🎙 ON' : '🎙 OFF';
+  micBadge.className   = audioTracks.length ? 'on' : 'off';
+  const mimes = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
+  const mimeType = mimes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+  try {
+    mediaRecorder = new MediaRecorder(videoStream, mimeType ? { mimeType } : {});
+  } catch(e) {
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    setUIVisible(true); recBtn.disabled = false; return;
+  }
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+    downloadBlob(blob, 'video_' + nowString() + '.' + ext);
+    recordedChunks = [];
+  };
+  mediaRecorder.onerror = () => stopRecording();
+  isRecording = true;
+  mediaRecorder.start(200);
+  drawFrame();
+  recBtn.classList.add('recording');
+  recBtn.disabled = false;
+  recHint.classList.add('active');
+  setUIVisible(true);
+}
+ 
+recBtn.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
+ 
+/* ─── 全画面 ─── */
+const fullBtn = document.getElementById('full-btn');
+const isFS = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+fullBtn.addEventListener('click', () => {
+  if (isFS()) {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document).catch(() => {});
+  } else {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el).catch(() => {});
+  }
+});
+ 
+</script>
+</body>
+</html>
+
+
+
+Claude は AI のため、誤りを含む可能性があります。回答内容は必ずご確認ください。
